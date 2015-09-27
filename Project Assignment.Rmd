@@ -1,0 +1,137 @@
+---
+title: 'Practical Machine Learning Project: Predicting manner in which exercise was done'
+author: "Rohan Jagdish Ashar"
+date: "September 27, 2015"
+output: 
+  html_document:
+    keep_md: true
+---
+
+The report contains the following sections:
+
+* Synopsis and Background
+* Model Building
+* Cross Validation
+* Sample Error
+* Prediction
+
+Synopsis and Background
+=======================
+
+The **objective** of this report is to predict the manner in which six participants did the exercise. 
+
+The data for this assignment come in the form of a comma-separated-value file. You can download the file from the course web site:
+<https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv>.
+The dataset includes data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: <http://groupware.les.inf.puc-rio.br/har> (see the section on the Weight Lifting Exercise Dataset).
+
+Model Building
+==============
+
+The dataset contains many columns that have accelerometer data. We want to remove the columns with missing values and the columns that contain factors.
+
+### Loading and preprocessing the data
+
+```{r loadData, echo=TRUE, cache=TRUE}
+# Loading training and test dataset
+traindata <- read.csv("pml-training.csv", na.strings = c("", "NA"))
+testdata <- read.csv("pml-testing.csv", na.strings = c("", "NA"))
+
+# Remove columns where there are NA or missing data
+traindata <- traindata[, apply(traindata, 2, function(x) !any(is.na(x)))]
+
+# Remove columns that are recording user information
+traindata <- traindata[,-c(1:7)]
+```
+
+Before running any machine learning algorithm we want to remove the covariates that are correlated to each other.
+
+### Covariate creation
+
+```{r Covariate, echo=TRUE, cache=TRUE}
+# Load the caret and Random Forest libraries
+library(caret)
+library(randomForest)
+
+# Check for correlations between covariates
+correlationMatrix <- cor(na.omit(traindata[sapply(traindata, is.numeric)]))
+
+# identify covariates that show greater than 90% correlation
+varCorrelated <- findCorrelation(correlationMatrix, cutoff = .90, verbose = TRUE)
+
+# Remove columns where there are NA or missing data
+traindata <- traindata[,-varCorrelated]
+```
+
+Split the training data into training and testing data. We can test the accuracy of the model on the test dataset before applying to the 20 test observations.
+
+### Create Training and Test dataset from the Training Data 
+
+```{r TrainTest, echo=TRUE, cache=TRUE}
+# Split the data training = 70% and testing = 30% 
+inTrain = createDataPartition(y = traindata$classe, p = 0.7, list = FALSE)
+
+# Assign training and test data to separate data frames
+smallTrain = traindata[inTrain, ]
+smallTest = traindata[-inTrain, ]
+
+# Check dimensions of the train and test datasets
+dim(smallTrain); dim(smallTest)
+```
+
+I am going to use Random Forest algorithm to predict the classe (exercise) based on the accelerometer variables.
+
+### Run Prediction Algorithm 
+
+```{r RandomForest, echo=TRUE, cache=TRUE}
+# Run Random Forest Algorithm on Training Dataset
+modFit <- randomForest(classe ~ ., data = smallTrain, mtry = 7)
+```
+
+Cross Validation
+================
+
+Cross validation will allow us to check for the accuracy of the prediction algorithm.
+
+```{r CrossValidation, echo=TRUE, cache=TRUE}
+# Check the prediction on the hold out test sample
+pred <- predict(modFit,smallTest)
+
+# Cross Validation Matrix to identify accuracy
+smallTest$PredRight <- pred==smallTest$classe
+predMatrix <- table(pred,smallTest$classe)
+```
+
+Sample Error
+============
+
+```{r SampleError, echo=TRUE, cache=TRUE}
+# Calculate sample error on test dataset
+sum(diag(predMatrix))/sum(as.vector(predMatrix))
+```
+
+The accuracy of the model on the test sample is 99% which suggests that the Random Forest algorithm is doing a good job at predicting the class. Also, the final test error on the 20 observations may be less than 99%.
+
+Now we can predict the 20 test observations using the model that gave us 99% error on the test data.
+
+Also, the following prediction code creates the data to upload for the project assignment.
+
+Prediction
+==========
+
+```{r Prediction, echo=TRUE, cache=TRUE}
+# Calculate sample error on test dataset
+predTest <- predict(modFit,testdata)
+
+# Output the classe prediction for test dataset
+predTest
+
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(predTest)
+```
+
